@@ -24,6 +24,10 @@ from cinema.serializers import (
 )
 
 
+def query_param_ints(params):
+    return [int(param) for param in params.split(",")]
+
+
 class GenreViewSet(viewsets.ModelViewSet):
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
@@ -43,6 +47,34 @@ class MovieViewSet(viewsets.ModelViewSet):
     queryset = Movie.objects.all()
     serializer_class = MovieSerializer
 
+    def get_queryset(self):
+        queryset = self.queryset
+
+        if self.action in ("list", "retrieve"):
+            queryset = queryset.select_related()
+
+        actors = self.request.query_params.get("actors")
+        genres = self.request.query_params.get("genres")
+        title = self.request.query_params.get("title")
+
+        if actors:
+            actors = query_param_ints(actors)
+            queryset = queryset.filter(
+                actors__id__in=actors
+            )
+
+        if genres:
+            genres = query_param_ints(genres)
+            queryset = queryset.filter(
+                genres__id__in=genres
+            )
+
+        if title:
+            queryset = queryset.filter(
+                title__icontains=title
+            )
+        return queryset
+
     def get_serializer_class(self):
         if self.action == "list":
             return MovieListSerializer
@@ -56,10 +88,6 @@ class MovieViewSet(viewsets.ModelViewSet):
 class MovieSessionViewSet(viewsets.ModelViewSet):
     queryset = MovieSession.objects.all()
     serializer_class = MovieSessionSerializer
-
-    @staticmethod
-    def _param_int(param):
-        return int(param)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -81,42 +109,23 @@ class MovieSessionViewSet(viewsets.ModelViewSet):
                 tickets_available=F("total_seats") - Count("tickets")
             )
 
-            actors = self.request.query_params.get("actors")
-            genres = self.request.query_params.get("genres")
-            title = self.request.query_params.get("title")
+        if self.action == "retrieve":
+            queryset = queryset.prefetch_related("movie")
 
-            date = self.request.query_params.get("date")
-            movie = self.request.query_params.get("movie")
+        date = self.request.query_params.get("date")
+        movie = self.request.query_params.get("movie")
 
-            if actors:
-                queryset = queryset.filter(
-                    Q(movie__actors__first_name__icontains=actors)
-                    | Q(movie__actors__last_name__icontains=actors)
-                )
+        if date:
+            queryset = queryset.filter(
+                show_time__date=date
+            )
 
-            if genres:
-                queryset = queryset.filter(
-                    movie__genres__name__icontains=genres
-                )
+        if movie:
+            movie = query_param_ints(movie)
+            queryset = queryset.filter(
+                movie__id__in=movie
+            )
 
-            if title:
-                queryset = queryset.filter(
-                    movie__title__icontains=title
-                )
-
-            if date:
-                queryset = queryset.filter(
-                    show_time__date=date
-                )
-
-            if movie:
-                movie = self._param_int(movie)
-                queryset = queryset.filter(
-                    movie_id=movie
-                )
-
-            if self.action == "retrieve":
-                queryset = queryset.prefetch_related("movie")
         return queryset.distinct()
 
 
